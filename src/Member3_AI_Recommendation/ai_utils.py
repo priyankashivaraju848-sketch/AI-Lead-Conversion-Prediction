@@ -4,21 +4,18 @@ import time
 
 
 def local_fallback(prompt):
-    """
-    Generate a structured local report when OpenRouter is unavailable.
-    Uses the supplied lead information instead of fixed test values.
-    """
+    """Generate a local rule-based report using supplied lead information."""
 
     def get_value(pattern, default="Not available"):
         match = re.search(pattern, prompt, re.IGNORECASE)
         return match.group(1).strip().strip("'\"") if match else default
 
     probability = get_value(
-        r"Conversion probability:\s*([\d.]+)%"
+        r"Conversion probability:\s*([\d.]+)\s*%"
     )
 
     category = get_value(
-        r"Lead category:\s*(High|Medium|Low)"
+        r"Lead category:\s*(High|Medium|Low)\b"
     ).title()
 
     visits = get_value(
@@ -37,7 +34,6 @@ def local_fallback(prompt):
         r"Last Activity['\"]?\s*:\s*([^,\n}]+)"
     )
 
-    # Capture the complete specialization, including internal commas.
     specialization = get_value(
         r"Specialization['\"]?\s*:\s*([^}\n]+)"
     )
@@ -45,9 +41,7 @@ def local_fallback(prompt):
     specialization = specialization.split(", '")[0].split(', "')[0]
     specialization = specialization.strip().strip("'\"")
 
-    # AI Explanation
     if "Prediction Summary" in prompt and "Observed Attributes" in prompt:
-
         report = f"""
 ### 1. Prediction Summary
 The ML model estimates a conversion probability of {probability}%.
@@ -61,7 +55,7 @@ The lead category is {category}. This is an estimate, not a guarantee.
 - Specialization: {specialization}
 
 ### 3. Positive Indicators
-The recorded website visits indicate website engagement.
+Recorded website visits indicate website engagement.
 
 ### 4. Potential Concerns
 Budget, purchasing authority and specific buying requirements
@@ -72,13 +66,11 @@ The lead falls into the {category} conversion category according
 to the ML model. Consider a measured nurturing approach.
 """
 
-    # Follow-up Strategy
     elif "FOLLOW-UP OBJECTIVE" in prompt:
-
         report = f"""
 ### 1. FOLLOW-UP OBJECTIVE
-Nurture the lead through an informative approach, considering
-the ML conversion probability of {probability}% and category {category}.
+Nurture the lead using an informative approach, considering
+the ML probability of {probability}% and category {category}.
 
 ### 2. RECOMMENDED COMMUNICATION CHANNEL
 Verify contact details and applicable communication permission
@@ -102,13 +94,11 @@ Best regards,
 2. Review new engagement information before further outreach.
 """
 
-    # Recommended Sales Action
     elif (
         "LEAD PROFILE SUMMARY" in prompt.upper()
         or "PREDICTION INTERPRETATION" in prompt.upper()
         or "NEXT STEPS" in prompt.upper()
     ):
-
         report = f"""
 ### 1. Lead Profile Summary
 The lead has {visits} recorded website visits and {website_time}
@@ -149,9 +139,7 @@ Best regards,
 3. Reassess when new information becomes available.
 """
 
-    # Generic AI Sales Assistant response
     else:
-
         report = f"""
 The ML model estimates a conversion probability of {probability}%
 and assigns the category {category}.
@@ -166,18 +154,19 @@ permission before outreach.
 
     return (
         "**Local Fallback Mode**\n\n"
-        "*OpenRouter is unavailable or its free quota is exhausted. "
-        "This report was generated using local rules, not an LLM.*\n\n"
+        "*OpenRouter is unavailable. This report uses local rules, "
+        "not an LLM.*\n\n"
         + report
     )
 
 
 def generate_text(ai_client, prompt, system_message,
                   max_tokens=650, retries=3):
-    """
-    Try OpenRouter first. Reject internal drafting responses.
-    Use local fallback if API requests fail.
-    """
+    """Try OpenRouter and use local fallback if unavailable."""
+
+    if ai_client is None:
+        print("OpenRouter unavailable. Using local fallback.")
+        return local_fallback(prompt)
 
     last_error = None
 
@@ -186,14 +175,8 @@ def generate_text(ai_client, prompt, system_message,
             response = ai_client.chat.completions.create(
                 model="openrouter/free",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": system_message
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=max(max_tokens, 1000),
                 temperature=0.3
@@ -221,7 +204,6 @@ def generate_text(ai_client, prompt, system_message,
                         return content
 
                     last_error = "OpenRouter returned internal drafting text."
-
             else:
                 last_error = "OpenRouter returned an empty response."
 
@@ -234,9 +216,5 @@ def generate_text(ai_client, prompt, system_message,
         if attempt < retries - 1:
             time.sleep(2)
 
-    print(
-        "OpenRouter unavailable. "
-        f"Using local fallback. Reason: {last_error}"
-    )
-
+    print(f"Using local fallback. Reason: {last_error}")
     return local_fallback(prompt)
