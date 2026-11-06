@@ -166,7 +166,16 @@ def category(probability):
     return "Low"
 
 def probability_for(predictor, row):
-    return float(predictor.predict_proba(row)[0][1])
+    prediction = predictor.predict_proba(row)
+    probability = float(prediction[0][1])
+
+    print("\n========== NEW LEAD PREDICTION ==========")
+    print("Input values:")
+    print(row.to_string(index=False))
+    print(f"Predicted probability: {probability * 100:.2f}%")
+    print("=========================================\n")
+
+    return probability
 
 def safe_ai_imports():
     if str(AI_DIR) not in sys.path:
