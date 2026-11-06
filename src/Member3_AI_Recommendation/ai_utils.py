@@ -10,6 +10,7 @@ def local_fallback(prompt):
         match = re.search(pattern, prompt, re.IGNORECASE)
         return match.group(1).strip().strip("'\"") if match else default
 
+    # Extract lead information
     probability = get_value(
         r"Conversion probability:\s*([\d.]+)\s*%"
     )
@@ -41,7 +42,9 @@ def local_fallback(prompt):
     specialization = specialization.split(", '")[0].split(', "')[0]
     specialization = specialization.strip().strip("'\"")
 
+    # AI Explanation fallback
     if "Prediction Summary" in prompt and "Observed Attributes" in prompt:
+
         report = f"""
 ### 1. Prediction Summary
 The ML model estimates a conversion probability of {probability}%.
@@ -66,7 +69,9 @@ The lead falls into the {category} conversion category according
 to the ML model. Consider a measured nurturing approach.
 """
 
+    # Follow-up strategy fallback
     elif "FOLLOW-UP OBJECTIVE" in prompt:
+
         report = f"""
 ### 1. FOLLOW-UP OBJECTIVE
 Nurture the lead using an informative approach, considering
@@ -94,11 +99,13 @@ Best regards,
 2. Review new engagement information before further outreach.
 """
 
+    # Sales recommendation fallback
     elif (
         "LEAD PROFILE SUMMARY" in prompt.upper()
         or "PREDICTION INTERPRETATION" in prompt.upper()
         or "NEXT STEPS" in prompt.upper()
     ):
+
         report = f"""
 ### 1. Lead Profile Summary
 The lead has {visits} recorded website visits and {website_time}
@@ -139,7 +146,9 @@ Best regards,
 3. Reassess when new information becomes available.
 """
 
+    # Generic AI assistant fallback
     else:
+
         report = f"""
 The ML model estimates a conversion probability of {probability}%
 and assigns the category {category}.
@@ -164,6 +173,7 @@ def generate_text(ai_client, prompt, system_message,
                   max_tokens=650, retries=3):
     """Try OpenRouter and use local fallback if unavailable."""
 
+    # Immediately use local fallback if API key/client is missing
     if ai_client is None:
         print("OpenRouter unavailable. Using local fallback.")
         return local_fallback(prompt)
@@ -203,7 +213,10 @@ def generate_text(ai_client, prompt, system_message,
                     ):
                         return content
 
-                    last_error = "OpenRouter returned internal drafting text."
+                    last_error = (
+                        "OpenRouter returned internal drafting text."
+                    )
+
             else:
                 last_error = "OpenRouter returned an empty response."
 
