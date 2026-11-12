@@ -2,8 +2,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from xgboost import XGBClassifier
-
+from dotenv import load_dotenv
 import joblib
 import numpy as np
 import pandas as pd
@@ -23,13 +22,19 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 
-BASE_DIR = Path(__file__).resolve().parent
+# Main project directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
-DATA_PATH = BASE_DIR.parent / "dataset" / "cleaned_leads.csv"
-MODEL_PATH = BASE_DIR.parent / "models" / "best_lead_model.json"
-PREPROCESSOR_PATH = BASE_DIR.parent / "models" / "preprocessor.pkl"
+# Dataset
+DATA_PATH = BASE_DIR / "dataset" / "cleaned_leads.csv"
 
-AI_DIR = BASE_DIR.parent / "src" / "Member3_AI_Recommendation"
+# Member 2 model artifacts
+MODEL_PATH = BASE_DIR / "models" / "best_lead_model.json"
+PREPROCESSOR_PATH = BASE_DIR / "models" / "preprocessor_member2_final.pkl"
+
+# Member 3 AI modules
+AI_DIR = BASE_DIR / "src" / "Member3_AI_Recommendation"
 
 st.set_page_config(
     page_title="AI Lead Conversion Dashboard",
@@ -133,21 +138,21 @@ def train_dashboard_model(csv_path, file_mtime):
     best_name = comparison.iloc[0]["Model"]
     return fitted[best_name], comparison, best_name, X_test, y_test
 
-def load_predictor(data):
-    """Load Member 2's verified XGBoost model and preprocessor."""
 
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
+@st.cache_resource
+def load_predictor():
 
-    if not PREPROCESSOR_PATH.exists():
-        raise FileNotFoundError(f"Preprocessor not found: {PREPROCESSOR_PATH}")
+    import xgboost as xgb
 
-    model = XGBClassifier()
+    # Load Member 2's JSON model
+    model = xgb.XGBClassifier()
     model.load_model(str(MODEL_PATH))
 
+    # Load Member 2's preprocessor
     preprocessor = joblib.load(PREPROCESSOR_PATH)
 
     class ExternalPredictor:
+
         def predict_proba(self, raw_df):
             processed = preprocessor.transform(raw_df)
             return model.predict_proba(processed)
@@ -156,7 +161,9 @@ def load_predictor(data):
             processed = preprocessor.transform(raw_df)
             return model.predict(processed)
 
-    return ExternalPredictor(), "Member 2 XGBoost model"
+    return ExternalPredictor(), "Member 2 XGBoost JSON model"
+
+
 
 def category(probability):
     if probability >= 0.70:
@@ -166,16 +173,7 @@ def category(probability):
     return "Low"
 
 def probability_for(predictor, row):
-    prediction = predictor.predict_proba(row)
-    probability = float(prediction[0][1])
-
-    print("\n========== NEW LEAD PREDICTION ==========")
-    print("Input values:")
-    print(row.to_string(index=False))
-    print(f"Predicted probability: {probability * 100:.2f}%")
-    print("=========================================\n")
-
-    return probability
+    return float(predictor.predict_proba(row)[0][1])
 
 def safe_ai_imports():
     if str(AI_DIR) not in sys.path:
@@ -192,7 +190,7 @@ except Exception as exc:
     st.error(str(exc))
     st.stop()
 
-predictor, predictor_source = load_predictor(df)
+predictor, predictor_source = load_predictor()
 X_all = df.drop(columns=["Converted"])
 with st.spinner("Calculating lead conversion probabilities..."):
     all_prob = predictor.predict_proba(X_all)[:, 1]
@@ -415,30 +413,73 @@ elif page == "AI Sales Assistant":
                     f"Details: {exc}"
                 )
 
+
 elif page == "Model Insights":
     st.subheader("Machine Learning Model Insights")
-    if predictor_source == "Dashboard fallback model":
-        _, comparison, best_name, X_test, y_test = train_dashboard_model(
-            str(DATA_PATH), DATA_PATH.stat().st_mtime
+
+    import xgboost as xgb
+
+    try:
+        # Load saved test data from Member 2
+        X_test = joblib.load(BASE_DIR / "models" / "X_test_processed.pkl")
+        y_test = joblib.load(BASE_DIR / "models" / "y_test.pkl")
+        y_test = np.asarray(y_test).ravel()
+
+        # Load Member 2's trained XGBoost model
+        evaluation_model = xgb.XGBClassifier()
+        evaluation_model.load_model(str(MODEL_PATH))
+
+        # Predict on the test set
+        y_pred = evaluation_model.predict(X_test)
+        y_prob = evaluation_model.predict_proba(X_test)[:, 1]
+
+        # Calculate evaluation metrics
+        accuracy = accuracy_score(y_test, y_pred)
+        precision = precision_score(y_test, y_pred, zero_division=0)
+        recall = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        auc = roc_auc_score(y_test, y_prob)
+
+        st.subheader("XGBoost Model Performance")
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Accuracy", f"{accuracy * 100:.2f}%")
+        c2.metric("Precision", f"{precision * 100:.2f}%")
+        c3.metric("Recall", f"{recall * 100:.2f}%")
+        c4.metric("F1-Score", f"{f1 * 100:.2f}%")
+        c5.metric("ROC-AUC", f"{auc * 100:.2f}%")
+
+        # Confusion Matrix Heatmap
+        st.subheader("Confusion Matrix")
+
+        cm = confusion_matrix(y_test, y_pred)
+
+        fig = px.imshow(
+            cm,
+            text_auto=True,
+            x=["Not Converted", "Converted"],
+            y=["Not Converted", "Converted"],
+            labels={
+                "x": "Predicted",
+                "y": "Actual",
+                "color": "Number of Leads"
+            },
+            color_continuous_scale="Blues",
+            title="XGBoost Confusion Matrix"
         )
-        st.caption("These metrics are generated by the dashboard fallback training run, not Member 2's missing model file.")
-        st.dataframe(comparison.style.format({
-            "Accuracy": "{:.3f}", "Precision": "{:.3f}", "Recall": "{:.3f}",
-            "F1 Score": "{:.3f}", "ROC-AUC": "{:.3f}"
-        }), use_container_width=True, hide_index=True)
-        fig = px.bar(
-            comparison.melt(id_vars="Model", var_name="Metric", value_name="Score"),
-            x="Model", y="Score", color="Metric", barmode="group",
-            title="Model Performance Comparison"
-        )
+
         st.plotly_chart(fig, use_container_width=True)
-        st.success(f"Best fallback model by F1-score: {best_name}")
-    else:
-        st.success("Member 2's model and preprocessor artifacts are loaded.")
-        st.info(
-            "To show Member 2's exact Accuracy, Precision, Recall, F1-score, ROC-AUC "
-            "and confusion matrix here, provide the model comparison results or evaluation file."
+
+        st.caption(
+            "Evaluation uses Member 2's saved test data and trained XGBoost model."
         )
+
+    except Exception as exc:
+        st.error(f"Model evaluation failed: {exc}")
+
+    # Prediction thresholds
+
+
 
     st.markdown("### Prediction Thresholds")
     st.write("- High potential: probability ≥ 70%")

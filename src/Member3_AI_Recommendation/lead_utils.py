@@ -8,3 +8,7 @@ def categorize_lead(probability):
     if probability >= 0.40:
         return "Medium"
     return "Low"
+def format_website_time(seconds):
+    seconds = int(float(seconds))
+    minutes, remaining_seconds = divmod(seconds, 60)
+    return f"{minutes} minutes {remaining_seconds} seconds"

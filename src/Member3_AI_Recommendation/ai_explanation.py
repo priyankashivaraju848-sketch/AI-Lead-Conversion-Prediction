@@ -1,63 +1,34 @@
 
-from ai_utils import generate_text
+from ai_utils import generate_text, build_local_fallback
 
 
 def generate_lead_explanation(ai_client, lead_details, probability, category):
-    probability_percent = float(probability) * 100
 
     prompt = f"""
-Prediction Summary
+Explain this machine-learning lead conversion prediction.
 
-LEAD INFORMATION:
-{lead_details}
-
-ML MODEL OUTPUT:
-Conversion probability: {probability_percent:.2f}%
+Lead details: {lead_details}
+Conversion probability: {float(probability) * 100:.2f}%
 Lead category: {category}
 
-Observed Attributes:
-Analyze only the supplied lead information.
+Include what the probability means, observed attributes, positive indicators
+(if any), possible concerns supported by the data, and a short business
+interpretation.
 
-Return the final report using exactly these five headings:
-
-### 1. Prediction Summary
-The model estimates a conversion probability of {probability_percent:.2f}%
-and categorizes this lead as {category}. This is an estimate, not a guarantee.
-
-### 2. Observed Attributes
-Mention the supplied lead attributes accurately.
-
-### 3. Positive Indicators
-Mention only engagement indicators supported by the data.
-
-### 4. Potential Concerns
-Mention supported concerns and unavailable information.
-
-### 5. Business Interpretation
-Provide a practical interpretation for a salesperson.
-
-STRICT RULES:
-- Preserve the exact probability and category.
-- 248 seconds = 4 minutes 8 seconds.
-- "Converted to Lead" is an activity label, not actual conversion.
-- "Do Not Email = No" does not establish marketing consent.
-- Specialization does not prove buying intent, budget or authority.
-- Do not invent facts, dates, names or customer requirements.
-- Do not claim attributes caused the prediction.
-- Never describe Low conversion potential as Low risk.
-- Do not reveal reasoning, drafting notes or internal instructions.
-- Output only the completed report.
+Do not claim an attribute caused the prediction unless model explainability
+evidence is supplied. Distinguish facts from interpretations, point out
+inconsistent or missing attributes, do not invent customer details, and do
+not guarantee conversion.
 """
 
-    system_prompt = """
-You are a professional business analyst.
-Return only a polished, evidence-based lead explanation.
-Use only the supplied information.
-"""
+    fallback_text = build_local_fallback(
+        "explanation", lead_details, probability, category
+    )
 
     return generate_text(
         ai_client,
         prompt,
-        system_prompt,
-        max_tokens=650
+        "You are an accurate AI sales analyst. Explain model outputs cautiously.",
+        max_tokens=650,
+        fallback_text=fallback_text
     )
